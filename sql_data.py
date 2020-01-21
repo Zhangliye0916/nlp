@@ -1,333 +1,256 @@
 # -*-coding:utf-8-*-
 
 import pymysql as mdb
-# import re
-from jqdatasdk import *
+import pandas as pd
 import datetime
-from scipy import stats
+import jieba
 import numpy as np
+import tushare as ts
 
 
-def sql_news(type_name, start_date, end_date):
+def single_company_news(company_name):
+
+    con = None
+
+    try:
+        # 连接mysql的方法：connect('ip','user','password','db_name')
+        con = mdb.connect('192.168.10.85', 'zly', 'zly@isi2019', 'work')
+        # 所有的查询，都在连接con的一个模块cursor上面运行的
+        cur = con.cursor()
+        # 执行一个查询
+        cur.execute("SELECT content, title, date from work.news where company = '" + company_name + "'")
+        # 取得上个查询的结果，是单个结果
+        data = cur.rowcount
+        print(data)
+
+    finally:
+        if con:
+            # 无论如何，连接记得关闭
+            con.close()
+
+
+def create_table():
+
+    con = None
+
+    try:
+        # 连接mysql的方法：connect('ip','user','password','db_name')
+        con = mdb.connect('192.168.10.85', 'zly', 'zly@isi2019', 'work')
+        # 所有的查询，都在连接con的一个模块cursor上面运行的
+        cur = con.cursor()
+        # 执行一个查询
+        cur.execute("SELECT content, title, date from work.news where company = '" + company_name + "'")
+        # 取得上个查询的结果，是单个结果
+        data = cur.rowcount
+        sql = """CREATE TABLE news_label (
+          uuid int(11) NOT NULL AUTO_INCREMENT,
+          `datetime` varchar(20) DEFAULT NULL,
+          `ironincome` decimal(20,2) DEFAULT NULL,
+          `generalincome` decimal(20,2) DEFAULT NULL,
+          `baiincome` decimal(20,2) DEFAULT NULL,
+          PRIMARY KEY (`id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+        """
+
+    finally:
+        if con:
+            # 无论如何，连接记得关闭
+            con.close()
+
+
+def sql_stock_list(stock_pool):
 
     # 连接mysql的方法：connect('ip','user','password','db_name')
     con = mdb.connect('192.168.10.85', 'zly', 'zly@isi2019', 'work')
-    cur = con.cursor(cursor=mdb.cursors.DictCursor)
-
-    sql = "SELECT a.uuid, a.date, a.stock_code as code FROM work.news as a " \
-          "left join work.news_type as b on a.uuid = b.id_news where b.type = '{}' and a.date > '{}' " \
-          "and a.date < '{}';" .format(type_name, start_date, end_date)
-
-    # print(sql)
+    # 所有的查询，都在连接con的一个模块cursor上面运行的
+    cur = con.cursor()
+    # 执行一个查询
+    sql = "select stock_code from work.stock_pool where stock_pool_name = '%s'" % stock_pool
 
     try:
         cur.execute(sql)
         con.commit()
-        return cur.fetchall()
+        result = cur.fetchall()
 
-    except Exception as e:
-        print(e)
-        return None
+        return [item[0] for item in result]
+
+    except:
+        con.rollback()
 
     finally:
         con.close()
 
 
-def sql_news2(type_name, start_date, end_date):
-
-    # 连接mysql的方法：connect('ip','user','password','db_name')
-    con = mdb.connect('192.168.10.85', 'zly', 'zly@isi2019', 'work')
-    cur = con.cursor(cursor=mdb.cursors.DictCursor)
-
-    sql = "SELECT a.uuid, a.date, a.stock_code as code, c.stock_pool_name FROM work.news as a " \
-          "left join work.news_type as b on a.uuid = b.id_news left join work.stock_pool as c " \
-          "on a.stock_code = c.stock_code where b.type = '{}' and c.stock_pool_name = '沪深300' " \
-          "and a.date > '{}' and a.date < '{}';".format(type_name, start_date, end_date)
-
-    # print(sql)
+def sql_insert(stock_pool_name):
+    con = None
 
     try:
+        # 连接mysql的方法：connect('ip','user','password','db_name')
+        con = mdb.connect('192.168.10.85', 'zly', 'zly@isi2019', 'work')
+        # 所有的查询，都在连接con的一个模块cursor上面运行的
+        cur = con.cursor()
+        # 执行一个查询
+        sql = "SELECT content, title, date from work.news where company = '" + company_name + "'"
         cur.execute(sql)
         con.commit()
-        return cur.fetchall()
-
-    except Exception as e:
-        print(e)
-        return None
+    except:
+        con.rollback()
 
     finally:
         con.close()
 
 
-def stock_size_pattern(text):
+def insert_data_stock_pool(path):
 
-    percent = re.findall(r"\d+\.?\d*%", text)
-    if len(percent) > 0:
-        return "|".join(percent), "percent"
+    data = pd.read_csv(path, encoding="utf-8-sig")
+    print(data.head())
 
-    stock = re.findall(r"[1-9]+[0-9,]*\.?[0-9,]*[亿|万]?股", text)
-    if len(stock) > 0:
-        return "|".join(stock), "stock"
+    # 连接mysql的方法：connect('ip','user','password','db_name')
+    con = mdb.connect('192.168.10.85', 'zly', 'zly@isi2019', 'work')
+    # 所有的查询，都在连接con的一个模块cursor上面运行的
+    cur = con.cursor()
+    # 执行一个查询
 
-    cash = re.findall(r"[1-9]+[0-9,]*\.?[0-9,]*[亿|万]?元|[1-9]+[0-9,]*\.?[0-9,]*[亿|万]", text)
-    if len(cash) > 0:
-        return "|".join(cash), "cash"
+    for ind in data.index:
+        line = data.loc[ind]
+        stock_pool_name = line["指数名称"]
+        stock_code = line["股票代码"]
+        stock_name = line["股票名称"]
+        updated_time = datetime.datetime.now()
 
-    return "", "other"
+        sql = "INSERT INTO work.stock_pool(idstock_pool,\
+              stock_pool_name, stock_code, stock_name, updated_time)\
+              VALUES (replace(uuid(), '-',''), '%s', '%s', '%s', '%s' )" % \
+                (stock_pool_name, stock_code, stock_name, updated_time)
 
-
-def position_pattern(text):
-
-    person = re.findall(r"(董监高|董事|监事|高管|总裁|实控人|管理人员|副总|控制人|管理层|总经理|员工|总监|董秘)", text)
-    if len(person) > 0:
-        return "person"
-
-    company = re.findall(r"(股东|证金|基金|证券)", text)
-    if len(company) > 0:
-        return "company"
-
-    return "other"
-
-
-def write_data(path, news_type):
-
-    auth("18612754762", "xyz117")
-
-    with open(path, "w") as f3:
-
-        news_data = sql_news(news_type, "2014-1-1", "2015-1-1")
-
-        drop_duplicate = set()
-
-        for num, item in enumerate(news_data):
-
-            if num % 10 == 0:
-                print(num)
-
-            uuid = item["uuid"]
-            date = datetime.datetime.strftime(item["date"], "%Y-%m-%d")
-            stock = item["code"]
-
-            if date + stock not in drop_duplicate:
-
-                drop_duplicate.add(date + stock)
-
-                if stock[0] == "6":
-                    stock += ".XSHG"
-
-                else:
-                    stock += ".XSHE"
-
-                try:
-                    data = jq_bars_data(stock, date)
-                    f3.write(uuid + " " + " ".join(data) + "\n")
-
-                except Exception as e:
-                    # print(uuid, stock, e)
-                    pass
-
-            else:
-                continue
-
-
-def jq_val_data(date):
-
-    return get_fundamentals(query(valuation.code, valuation.circulating_cap.label("vol"),
-                                  valuation.turnover_ratio.label("turnover"),
-                                  valuation.circulating_market_cap.label("cap"), valuation.pe_ratio.label("pe"),
-                                  valuation.pb_ratio.label("pb"), valuation.ps_ratio.label("ps"),
-                                  valuation.pcf_ratio.label("pcf")), date).fillna(0)
-
-
-def jq_indicator_data(stat_date):
-
-    return get_fundamentals(query(valuation.code, indicator.roe, indicator.roa,
-                                  indicator.gross_profit_margin.label("gross"),
-                                  indicator.inc_revenue_year_on_year.label("income"),
-                                  indicator.inc_net_profit_year_on_year.label("return")), stat_date).fillna(0)
-
-
-def jq_bars_data(stock_in, date_in):
-
-    price = get_bars(stock_in, 22, unit='1d',
-                     fields=['date', 'close', 'volume'],
-                     include_now=True, end_dt=date_in, fq_ref_date=None)
-
-    price = price.fillna(method="ffill")
-
-    pct_1d = "%.2f" % float(price["close"][21] / price["close"][20] - 1.)
-    pct_5d = "%.2f" % float(price["close"][21] / price["close"][16] - 1.)
-    pct_22d = "%.2f" % float(price["close"][21] / price["close"][0] - 1.)
-
-    pct_1d_v = "%.2f" % float(price["volume"][21] / price["volume"][20] - 1.)
-    pct_5d_v = "%.2f" % float(price["volume"][21] / price["volume"][16] - 1.)
-    pct_22d_v = "%.2f" % float(price["volume"][21] / price["volume"][0] - 1.)
-
-    return [stock_in, pct_1d, pct_5d, pct_22d, pct_1d_v, pct_5d_v, pct_22d_v]
-
-
-def jq_bars_data2(stock_in, date_e, bars):
-
-    price = get_bars(stock_in, bars[0] + 1, unit='1d',
-                     fields=['date', 'close'],
-                     include_now=False, end_dt=date_e, fq_ref_date=None)
-
-    price = price.fillna(method="ffill")
-
-    p1 = price["close"][bars[2]] / price["close"][bars[1]] - 1.
-    p2 = price["close"][bars[3]] / price["close"][bars[1]] - 1.
-    p3 = price["close"][bars[4]] / price["close"][bars[1]] - 1.
-
-    return p1, p2, p3
-
-
-def stat_price(news_data, trade_days, mark, bars, with_mark=True):
-
-    drop_duplicate = set()
-
-    signs = [0]*3
-
-    return1 = []
-    return2 = []
-    return3 = []
-
-    count = 0
-
-    for num, item in enumerate(news_data):
-
-        if num % 100 == 0:
-            # print(num)
+        try:
+            cur.execute(sql)
+            con.commit()
             pass
 
-        date_ori = item["date"].date()
+        except:
+            con.rollback()
 
-        if item["date"].hour >= 15:
-            dates_after = [item for item in trade_days if item > date_ori]
+    con.close()
 
-        else:
-            dates_after = [item for item in trade_days if item >= date_ori]
 
-        date_p = [dates_after[ind].strftime('%Y-%m-%d') for ind in bars[1:]]
-        date_end = dates_after[bars[0] + 1].strftime('%Y-%m-%d')
+def sql_news():
 
-        if not with_mark:
-            mr1, mr2, mr3 = 0, 0, 0
+    con = None
 
-        else:
-            # print(date1, date2, date3, date0)
-            mr1 = mark[date_p[1]] / mark[date_p[0]] - 1
-            mr2 = mark[date_p[2]] / mark[date_p[0]] - 1
-            mr3 = mark[date_p[3]] / mark[date_p[0]] - 1
+    try:
+        # 连接mysql的方法：connect('ip','user','password','db_name')
+        con = mdb.connect('192.168.10.85', 'zly', 'zly@isi2019', 'work')
+        # 所有的查询，都在连接con的一个模块cursor上面运行的
+        cur = con.cursor(cursor=mdb.cursors.DictCursor)
+        # 执行一个查询
+        # sql = "SELECT uuid, content, title, reader, remark from work.news;"
+        sql = "select uuid, content, title, reader, remark from work.news \
+                where work.news.uuid not in (select id_news from work.news_cut)"
+        cur.execute(sql)
+        con.commit()
+        result = cur.fetchall()
+        return result
 
-        stock = item["code"]
+    except:
+        con.rollback()
 
-        if datetime.datetime.strftime(date_ori, "%Y-%m-%d") + stock not in drop_duplicate:
+    finally:
+        con.close()
 
-            drop_duplicate.add(datetime.datetime.strftime(date_ori, "%Y-%m-%d") + stock)
 
-            if stock[0] == "6":
-                stock += ".XSHG"
+def insert_data_topic(path):
 
-            else:
-                stock += ".XSHE"
+    data = pd.read_csv(path, encoding="utf-8-sig")
+    print(data.head())
 
-            try:
-                r1, r2, r3 = jq_bars_data2(stock, date_end, bars)
+    # 连接mysql的方法：connect('ip','user','password','db_name')
+    con = mdb.connect('192.168.10.85', 'zly', 'zly@isi2019', 'work')
+    # 所有的查询，都在连接con的一个模块cursor上面运行的
+    cur = con.cursor()
+    # 执行一个查询
 
-                return1.append(r1 - mr1)
-                return2.append(r2 - mr2)
-                return3.append(r3 - mr3)
+    for ind in data.index:
+        line = data.loc[ind]
+        topic_name = line["topic_name"]
+        topic_index = line["index"]
+        rate = line["rate"]
+        period = line["period"]
+        updated_time = datetime.datetime.now()
 
-                if r1 - mr1 > 0.:
-                    signs[0] += 1
+        sql = "INSERT INTO work.news_topic(idnews_topic,\
+              topic_name, topic_index, rate, period, updated_time)\
+              VALUES (replace(uuid(), '-',''), '%s', '%s', '%s', '%s', '%s' )" % \
+                (topic_name, topic_index, rate, period, updated_time)
 
-                if r2 - mr2 > 0.:
-                    signs[1] += 1
+        print (sql)
+        try:
+            cur.execute(sql)
+            con.commit()
 
-                if r3 - mr3 > 0.:
-                    signs[2] += 1
+        except:
+            con.rollback()
 
-                count += 1
+    con.close()
 
-            except Exception as e:
-                # print(item["uuid"], stock, e)
-                pass
 
-        else:
+
+def insert_news_cut():
+
+    jieba.load_userdict(Path1 + "userdict.txt")
+
+    all_data = sql_news()
+
+    # 连接mysql的方法：connect('ip','user','password','db_name')
+    con = mdb.connect('192.168.10.85', 'zly', 'zly@isi2019', 'work')
+    # 所有的查询，都在连接con的一个模块cursor上面运行的
+    cur = con.cursor()
+    # 执行一个查询
+
+    count = 0
+    for line in all_data:
+
+        count += 1
+        if count % 10 == 0:
+            print(count)
+
+        if line["content"] is np.nan or line["title"] is np.nan:
             continue
 
-    t_val1, p_val1 = stats.ttest_1samp(return1, 0)
-    t_val2, p_val2 = stats.ttest_1samp(return2, 0)
-    t_val3, p_val3 = stats.ttest_1samp(return3, 0)
+        id_news = line["uuid"]
+        DateTime = datetime.datetime.now()
 
-    # print(return1)
-    # print(np.mean(return1), np.mean(return2), np.mean(return3))
-    # print(np.std(return1), np.std(return2), np.std(return3))
-    # print(Counter(dates))
+        title = line["title"]
+        content = line["content"]
 
-    if count == 0:
-        print(type_name, year + start_dates[md], year + end_dates[md],
-              np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 0)
+        title_cut = " ".join(jieba.lcut(title.replace("\n", "")))
+        content_cut = " ".join(jieba.lcut(content.replace("\n", "")))
 
-        return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 0
+        sql = "INSERT INTO work.news_cut(idnews_cut,\
+                  id_news, news_title_cut, news_content_cut, updated_time)\
+                  VALUES (replace(uuid(), '-',''), '%s', '%s', '%s', '%s' )" % \
+              (id_news, title_cut, content_cut, DateTime)
 
-    rate1 = signs[0] / count
-    rate2 = signs[1] / count
-    rate3 = signs[2] / count
+        try:
+            cur.execute(sql)
+            con.commit()
 
-    print(type_name, year + start_dates[md], year + end_dates[md],
-          rate1, rate2, rate3, np.mean(return1), np.mean(return2), np.mean(return3), p_val1, p_val2, p_val3, count)
+        except:
+            print(id_news)
+            con.rollback()
 
-    return rate1, rate2, rate3, np.mean(return1), np.mean(return2), np.mean(return3), p_val1, p_val2, p_val3, count
+    con.close()
 
 
-def get_bench(start_date, end_date, index_name):
-
-    out = get_price(index_name, start_date=start_date, end_date=end_date, frequency='daily', fields=None,
-                    skip_paused=False, fq='pre')["close"]
-
-    # print(out)
-    date_index = []
-    for d in out.index:
-        date_index.append(d.to_pydatetime().strftime("%Y-%m-%d"))
-
-    out.index = date_index
-
-    return out
+def insert_stock_price():
+    pass
 
 
 if __name__ == "__main__":
 
-    # auth("15811211802", "211802")
-    auth("18612754762", "xyz117")
-    print(get_query_count())
-    
-    tradeDays = get_trade_days(start_date="2011-1-1", end_date="2020-10-1")
-    bench = get_bench("2011-1-1", "2020-9-20", "000842.XSHG")
+    Path1 = "C:/Users/text/Desktop/data_news/"
+    insert_data_topic(Path1 + "topic.csv")
 
-    # start_dates = ["2012-1-1", "2013-1-1", "2014-1-1", "2015-1-1", "2016-1-1", "2017-1-1", "2018-1-1"]
-    # end_dates = ["2013-1-1", "2014-1-1", "2015-1-1", "2016-1-1", "2017-1-1", " 2018-1-1", "2019-9-1"]
 
-    # start_dates = ["2019-1-1", "2019-2-1", "2019-3-1", "2019-4-1", "2019-5-1", "2019-6-1", "2019-7-1", "2019-8-1"]
-    # end_dates = ["2019-2-1", "2019-3-1", "2019-4-1", "2019-5-1", "2019-6-1", "2019-7-1", "2019-8-1", "2019-9-1"]
 
-    start_dates = ["-1-1", "-2-1", "-3-1", "-4-1", "-5-1", "-6-1", "-7-1", "-8-1", "-9-1", "-10-1", "-11-1", "-12-1"]
-    end_dates = ["-2-1", "-3-1", "-4-1", "-5-1", "-6-1", "-7-1", "-8-1", "-9-1", "-10-1", "-11-1", "-12-1", "-12-31"]
 
-    # start_dates = ["-1-1"]
-    # end_dates = ["-12-31"]
-
-    # start_dates = ["2018-9-1", "2018-10-1", "2018-11-1", "2018-12-1"]
-    # end_dates = ["2018-10-1", "2018-11-1", "2018-12-1", "2019-1-1"]
-
-    # years = ["2012", "2013", "2014", "2015", "2016", "2017", "2018", "2019"]
-    # years = ["2017"]
-    years = ["2018"]
-    type_name = "龙虎榜"
-
-    for year in years:
-        for md in range(len(start_dates)):
-
-            newsData = sql_news(type_name, year + start_dates[md], year + end_dates[md])
-
-            stat_price(newsData, tradeDays, bench, [5, 0, 1, 3, 5], True)
